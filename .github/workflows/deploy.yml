@@ -1,11 +1,11 @@
-name: Build and Deploy to k3s
+name: Build Docker Image
 
 on:
   push:
     branches: [ main ]
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
     
     steps:
@@ -14,25 +14,12 @@ jobs:
     - name: Build Docker image
       run: |
         docker build -t devops-app:${{ github.sha }} .
-        docker tag devops-app:${{ github.sha }} devops-app:latest
+        docker images | grep devops-app
     
-    - name: Save image and deploy to k3s
-      env:
-        SERVER_IP: ${{ secrets.SERVER_IP }}
-        SSH_KEY: ${{ secrets.SSH_KEY }}
+    - name: Test image
       run: |
-        mkdir -p ~/.ssh
-        echo "$SSH_KEY" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
-        ssh-keyscan -H $SERVER_IP >> ~/.ssh/known_hosts
-        
-        # Send Dockerfile to server
-        scp -i ~/.ssh/id_rsa Dockerfile root@$SERVER_IP:/opt/devops-learning/
-        
-        # Build on server and reload k3s
-        ssh -i ~/.ssh/id_rsa root@$SERVER_IP << 'DEPLOY'
-        cd /opt/devops-learning
-        docker build -t devops-learning_app:latest .
-        docker save devops-learning_app:latest | k3s ctr images import -
-        kubectl rollout restart deployment/devops-app -n devops-app
-        DEPLOY
+        docker run -d -p 8080:8080 --name test-app devops-app:${{ github.sha }}
+        sleep 2
+        curl http://localhost:8080 || echo "Test failed"
+        docker stop test-app
+        docker rm test-app
