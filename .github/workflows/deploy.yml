@@ -1,11 +1,11 @@
-name: Build Docker Image
+name: Build and Deploy to k3s
 
 on:
   push:
     branches: [ main ]
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
     
     steps:
@@ -13,13 +13,30 @@ jobs:
     
     - name: Build Docker image
       run: |
-        docker build -t devops-app:${{ github.sha }} .
+        docker build -t devops-app:latest .
         docker images | grep devops-app
     
-    - name: Test image
+    - name: Test image locally
       run: |
-        docker run -d -p 8080:8080 --name test-app devops-app:${{ github.sha }}
+        docker run -d -p 8080:8080 --name test-app devops-app:latest
         sleep 2
-        curl http://localhost:8080 || echo "Test failed"
-        docker stop test-app
-        docker rm test-app
+        curl http://localhost:8080
+        docker stop test-app && docker rm test-app
+    
+    - name: Deploy to k3s (via SSH)
+      env:
+        SERVER_IP: ${{ secrets.SERVER_IP }}
+        SSH_KEY: ${{ secrets.SSH_KEY }}
+      run: |
+        mkdir -p ~/.ssh
+        echo "$SSH_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H $SERVER_IP >> ~/.ssh/known_hosts 2>/dev/null
+        
+        ssh -i ~/.ssh/id_rsa root@$SERVER_IP << 'DEPLOY'
+        cd /opt/devops-learning
+        docker build -t devops-learning_app:latest .
+        docker save devops-learning_app:latest | k3s ctr images import -
+        kubectl rollout restart deployment/devops-app -n devops-app
+        kubectl get pods -n devops-app
+        DEPLOY
