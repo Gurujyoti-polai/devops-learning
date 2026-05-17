@@ -1,19 +1,38 @@
 version: '3.8'
+
 services:
   app:
     build: .
+    container_name: devops-app
     ports:
       - "8080:8080"
     environment:
       - DB_HOST=postgres
       - DB_PORT=5432
+      - DB_USER=devops
+      - DB_PASSWORD=devops123
+      - DB_NAME=devopsdb
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
       - devops-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:8080/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   postgres:
     image: postgres:15-alpine
+    container_name: devops-postgres
     environment:
       - POSTGRES_USER=devops
       - POSTGRES_PASSWORD=devops123
@@ -24,9 +43,21 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - devops-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devops"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   postgres_data:
+    driver: local
 
 networks:
   devops-network:
